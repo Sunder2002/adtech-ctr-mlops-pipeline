@@ -163,7 +163,7 @@ graph TD
 
 ---
 
-## 🛠️ Interview Cheat Sheet: How to Talk About This Project
+## 🛠️ Project Details
 
 As a Senior ML Systems Architect, highlight these engineering challenges we solved:
 
