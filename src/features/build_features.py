@@ -1,99 +1,48 @@
 import yaml
 import sys
-import os
-import logging
-import traceback
-from datetime import datetime
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
-from pyspark.sql.types import TimestampType, DoubleType, IntegerType
+from pyspark.sql.types import TimestampType, DoubleType, IntegerType, LongType
 from src.utils.logger import get_logger
 
-# Initialize professional-grade logging
 logger = get_logger(__name__)
 
-class FeaturePipeline:
-    """
-    Encapsulates the logic for distributed feature engineering.
-    Designed for MiQ's requirement for scalable, production-ready ETL.
-    """
-    def __init__(self, raw_path: str, processed_path: str):
-        self.raw_path = raw_path
-        self.processed_path = processed_path
-        self.spark = self._init_spark()
+def run_pyspark_etl(raw_path: str, processed_path: str) -> None:
+    logger.info("Starting Production ETL Pipeline...")
+    spark = SparkSession.builder.appName("MiQ_ETL").master("local[*]").getOrCreate()
+    
+    try:
+        df = spark.read.parquet(raw_path)
 
-    def _init_spark(self) -> SparkSession:
-        logger.info("Initializing Enterprise-Scale PySpark Session...")
-        return SparkSession.builder \
-            .appName("MiQ_AdTech_Production_ETL") \
-            .master("local[*]") \
-            .config("spark.driver.memory", "2g") \
-            .config("spark.sql.parquet.compression.codec", "snappy") \
-            .config("spark.sql.execution.arrow.pyspark.enabled", "true") \
-            .getOrCreate()
+        # 1. Add Event Metadata
+        df = df.withColumn("event_timestamp", F.current_timestamp().cast(TimestampType()))
 
-    def run(self):
-        try:
-            if not os.path.exists(self.raw_path):
-                logger.error(f"IO_ERROR: Raw source missing at {self.raw_path}")
-                sys.exit(1)
+        # 2. Transform with STRICT types (Matches XGBoost expectations)
+        df = df.withColumn("is_peak_hour", 
+                 F.when((F.col("hour_of_day") >= 17) & (F.col("hour_of_day") <= 21), 1).otherwise(0).cast(IntegerType()))
+        
+        df = df.withColumn("is_mobile", 
+                 F.when(F.col("device_type") == "mobile", 1).otherwise(0).cast(IntegerType()))
+        
+        df = df.withColumn("is_shopping_site", 
+                 F.when(F.col("site_category") == "shopping", 1).otherwise(0).cast(IntegerType()))
 
-            logger.info(f"Ingesting raw bid-stream: {self.raw_path}")
-            df = self.spark.read.parquet(self.raw_path)
+        # Ensure numeric columns are double/long
+        df = df.withColumn("ad_spend_cpm", F.col("ad_spend_cpm").cast(DoubleType()))
+        df = df.withColumn("hour_of_day", F.col("hour_of_day").cast(LongType()))
 
-            # 1. Temporal Feature Engineering
-            # event_timestamp is mandatory for the Feast Feature Store
-            logger.info("Generating temporal signals and event timestamps...")
-            df_transformed = df.withColumn(
-                "event_timestamp", 
-                F.current_timestamp().cast(TimestampType())
-            ).withColumn(
-                "is_peak_hour", 
-                F.when((F.col("hour_of_day") >= 17) & (F.col("hour_of_day") <= 21), 1).otherwise(0)
-            )
-
-            # 2. Categorical Behavioral Encoding
-            logger.info("Encoding high-cardinality device and site signals...")
-            df_encoded = df_transformed.withColumn(
-                "is_mobile", 
-                F.when(F.col("device_type") == "mobile", 1).otherwise(0)
-            ).withColumn(
-                "is_shopping_site", 
-                F.when(F.col("site_category") == "shopping", 1).otherwise(0)
-            )
-
-            # 3. Schema Enforcement for Feature Store Alignment
-            final_df = df_encoded.select(
-                F.col("user_id").cast(IntegerType()),
-                "event_timestamp",
-                F.col("ad_spend_cpm").cast(DoubleType()),
-                "hour_of_day",
-                "is_peak_hour",
-                "is_mobile",
-                "is_shopping_site",
-                "is_clicked"
-            )
-
-            # 4. Atomic Partitioned Write
-            logger.info(f"Persisting Snappy-compressed features to: {self.processed_path}")
-            final_df.write.mode("overwrite").parquet(self.processed_path)
-            
-            logger.info(f"Pipeline Succeeded. Processed Events: {final_df.count()}")
-
-        except Exception as e:
-            logger.error(f"ETL_CRASH: {str(e)}")
-            logger.error(traceback.format_exc())
-            raise
-        finally:
-            self.spark.stop()
-            logger.info("Spark session decommissioned.")
+        # 3. Final Selection
+        cols = ["user_id", "event_timestamp", "ad_spend_cpm", "hour_of_day", "is_peak_hour", "is_mobile", "is_shopping_site", "is_clicked"]
+        df.select(cols).write.mode("overwrite").parquet(processed_path)
+        
+        logger.info(f"ETL successful. Data persisted to {processed_path}")
+    except Exception as e:
+        logger.error(f"ETL Failed: {e}")
+        sys.exit(1)
+    finally:
+        spark.stop()
 
 if __name__ == "__main__":
     with open("config/config.yaml", "r") as f:
         config = yaml.safe_load(f)
-    
-    pipeline = FeaturePipeline(
-        raw_path=config["data"]["raw_path"], 
-        processed_path=config["data"]["processed_path"]
-    )
-    pipeline.run()
+    run_pyspark_etl(config["data"]["raw_path"], config["data"]["processed_path"])

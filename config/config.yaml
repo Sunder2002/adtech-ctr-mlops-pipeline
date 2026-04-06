@@ -1,6 +1,25 @@
+project:
+  name: "MiQ_AdTech_CTR"
+  version: "2.5.0"
+
 data:
   raw_path: "data/raw/raw_impressions.parquet"
   processed_path: "data/processed/features.parquet"
+
+features:
+  # Strict typing for Spark-to-XGBoost compatibility
+  schema:
+    - name: "ad_spend_cpm"
+      type: "float64"
+    - name: "hour_of_day"
+      type: "int64"
+    - name: "is_peak_hour"
+      type: "int32"
+    - name: "is_mobile"
+      type: "int32"
+    - name: "is_shopping_site"
+      type: "int32"
+
 model:
   target: "is_clicked"
   test_size: 0.2
@@ -9,6 +28,8 @@ model:
     max_depth: 6
     learning_rate: 0.1
     n_estimators: 100
+    objective: "binary:logistic"
+
 mlflow:
   experiment_name: "MiQ_Ad_CTR_Prediction"
   tracking_uri: "sqlite:///mlflow.db"

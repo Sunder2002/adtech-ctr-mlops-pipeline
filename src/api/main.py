@@ -1,136 +1,85 @@
-import time
-import yaml
-import mlflow
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import HTMLResponse
+from pydantic import BaseModel
 import pandas as pd
+import numpy as np
+import mlflow
+import yaml
 from datetime import datetime
-from typing import Dict, Any, Optional
-from fastapi import FastAPI, HTTPException, status
-from pydantic import BaseModel, Field, field_validator
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-# Production Configuration Loader
-def load_config():
-    try:
-        with open("config/config.yaml", "r") as f:
-            return yaml.safe_load(f)
-    except Exception:
-        return {"mlflow": {"tracking_uri": "sqlite:///mlflow.db", "experiment_name": "MiQ_Ad_CTR_Prediction"}}
+app = FastAPI(title="MiQ Ad-Tech Bidding Engine v2.5.0")
 
-config = load_config()
-
-app = FastAPI(
-    title="MiQ Programmatic Bidding Engine",
-    description="Scalable CTR inference engine supporting OpenRTB standards.",
-    version="2.4.0"
-)
-
-# 1. Pydantic V2 Schemas
 class BidRequest(BaseModel):
-    auction_id: str = Field(..., min_length=1)
+    auction_id: str
     user_id: int
     site_domain: str
     user_agent: str
-    device_type: str = "mobile"
-    floor_price: float = Field(default=0.01, ge=0)
+    floor_price: float
 
-    @field_validator('floor_price')
-    @classmethod
-    def ensure_positive_floor(cls, v: float) -> float:
-        if v < 0: raise ValueError("Floor price must be >= 0")
-        return v
+model = None
 
-class BidResponse(BaseModel):
-    id: str
-    bid: bool
-    price: float
-    currency: str = "USD"
-    ctr_prediction: int
-    latency_ms: float
+@app.on_event("startup")
+def load_model():
+    global model
+    try:
+        mlflow.set_tracking_uri("sqlite:///mlflow.db")
+        client = mlflow.tracking.MlflowClient()
+        exp = client.get_experiment_by_name("MiQ_Ad_CTR_Prediction")
+        if exp:
+            runs = client.search_runs(exp.experiment_id, order_by=["start_time DESC"])
+            if runs:
+                model = mlflow.pyfunc.load_model(f"runs:/{runs[0].info.run_id}/xgboost-ctr-model")
+                logger.info("API is LIVE: Latest model registered.")
+    except Exception as e:
+        logger.error(f"Startup Model Load Error: {e}")
 
-# 2. Predictive Engine (Thread-Safe Registry)
-class PredictiveEngine:
-    _instance = None
+@app.get("/", response_class=HTMLResponse)
+def root():
+    """Returns a professional landing page for the service."""
+    return """
+    <html>
+        <body style="font-family: sans-serif; padding: 50px;">
+            <h1>🚀 MiQ Bidding Engine v2.5.0</h1>
+            <p>Status: <span style="color: green;">Online</span></p>
+            <hr>
+            <h3>Service Links:</h3>
+            <ul>
+                <li><a href="/docs">Interactive API Documentation (Swagger)</a></li>
+                <li><a href="/health">System Health Check</a></li>
+            </ul>
+        </body>
+    </html>
+    """
 
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super(PredictiveEngine, cls).__new__(cls)
-            cls._instance.model = None
-            cls._instance._load()
-        return cls._instance
-
-    def _load(self):
-        logger.info("Syncing with MLflow Model Registry...")
-        try:
-            mlflow.set_tracking_uri(config["mlflow"]["tracking_uri"])
-            client = mlflow.tracking.MlflowClient()
-            exp = client.get_experiment_by_name(config["mlflow"]["experiment_name"])
-            if exp:
-                # We pull the best run based on the most recent SUCCESSFUL training
-                runs = client.search_runs(
-                    exp.experiment_id, 
-                    filter_string="attributes.status = 'FINISHED'",
-                    order_by=["attributes.start_time DESC"], 
-                    max_results=1
-                )
-                if runs:
-                    self.model = mlflow.pyfunc.load_model(f"runs:/{runs[0].info.run_id}/xgboost-ctr-model")
-                    logger.info(f"Engine Online: Loaded Run {runs[0].info.run_id}")
-        except Exception as e:
-            logger.error(f"REGISTRY_FAILURE: {e}")
-
-engine = PredictiveEngine()
-
-# 3. Request Handlers
 @app.get("/health")
 def health():
-    return {
-        "status": "ready", 
-        "model_loaded": engine.model is not None,
-        "runtime": "Python 3.12"
-    }
+    return {"status": "ready", "model_loaded": model is not None}
 
-@app.post("/bid", response_model=BidResponse)
-async def process_bid(request: BidRequest):
-    """
-    Handles Real-Time Bidding (RTB) logic.
-    Calculates CTR prediction and decides bid price in <100ms.
-    """
-    start_time = time.perf_counter()
+@app.post("/bid")
+def bid(request: BidRequest):
+    if model is None: raise HTTPException(status_code=503, detail="Model Loading")
     
-    if engine.model is None:
-        raise HTTPException(status_code=503, detail="Model Engine Initializing")
-
     try:
-        # Pydantic V2 model_dump()
-        payload = request.model_dump()
-        
-        # Real-time feature derivation
         hour = datetime.now().hour
+        # STRICT TYPE CASTING: Fixed for MLflow compatibility
         features = {
-            "ad_spend_cpm": payload["floor_price"],
-            "hour_of_day": hour,
-            "is_peak_hour": 1 if 17 <= hour <= 21 else 0,
-            "is_mobile": 1 if "mobi" in payload["user_agent"].lower() else 0,
-            "is_shopping_site": 1 if "shop" in payload["site_domain"].lower() else 0
+            "ad_spend_cpm": np.float64(request.floor_price),
+            "hour_of_day": np.int64(hour),
+            "is_peak_hour": np.int32(1 if 17 <= hour <= 21 else 0),
+            "is_mobile": np.int32(1 if "mobi" in request.user_agent.lower() else 0),
+            "is_shopping_site": np.int32(1 if "shop" in request.site_domain.lower() else 0)
         }
         
-        # Scoring
-        prediction = int(engine.model.predict(pd.DataFrame([features]))[0])
+        df_input = pd.DataFrame([features])
+        df_input = df_input[['ad_spend_cpm', 'hour_of_day', 'is_peak_hour', 'is_mobile', 'is_shopping_site']]
         
-        # Bidding Strategy: 15% Premium on predicted clicks
-        bid_price = payload["floor_price"] * 1.15 if prediction == 1 else 0.0
+        prediction = int(model.predict(df_input)[0])
+        bid_price = request.floor_price * 1.15 if prediction == 1 else 0.0
         
-        latency = (time.perf_counter() - start_time) * 1000
-
-        return BidResponse(
-            id=payload["auction_id"],
-            bid=bid_price > 0,
-            price=round(bid_price, 4),
-            ctr_prediction=prediction,
-            latency_ms=round(latency, 2)
-        )
+        return {"id": request.auction_id, "bid": bid_price > 0, "price": round(bid_price, 4)}
     except Exception as e:
-        logger.error(f"INFERENCE_ERROR: {e}")
-        raise HTTPException(status_code=500, detail="Internal Logic Error")
+        logger.error(f"Inference crash: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
