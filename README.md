@@ -1,1 +1,0 @@
-# adtech-ctr-mlops-pipeline

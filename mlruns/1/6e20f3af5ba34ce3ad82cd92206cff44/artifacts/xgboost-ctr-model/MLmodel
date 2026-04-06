@@ -1,0 +1,20 @@
+artifact_path: xgboost-ctr-model
+flavors:
+  python_function:
+    data: model.xgb
+    env:
+      conda: conda.yaml
+      virtualenv: python_env.yaml
+    loader_module: mlflow.xgboost
+    python_version: 3.12.1
+  xgboost:
+    code: null
+    data: model.xgb
+    model_class: xgboost.sklearn.XGBClassifier
+    model_format: xgb
+    xgb_version: 2.0.3
+mlflow_version: 2.9.2
+model_size_bytes: 329187
+model_uuid: 5920b9c2c456412fa2bcf1027bbf6d67
+run_id: 6e20f3af5ba34ce3ad82cd92206cff44
+utc_time_created: '2026-04-06 12:17:15.953661'
