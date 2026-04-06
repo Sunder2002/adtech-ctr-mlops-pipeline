@@ -1,0 +1,30 @@
+artifact_path: xgboost-ctr-model
+flavors:
+  python_function:
+    env:
+      conda: conda.yaml
+      virtualenv: python_env.yaml
+    loader_module: mlflow.sklearn
+    model_path: model.pkl
+    predict_fn: predict
+    python_version: 3.12.1
+  sklearn:
+    code: null
+    pickled_model: model.pkl
+    serialization_format: cloudpickle
+    sklearn_version: 1.3.2
+mlflow_version: 2.9.2
+model_size_bytes: 366172
+model_uuid: 076323b4e66d4e819f5dff36576e4598
+run_id: df901f09964b4e1c9ec79bd186aa057d
+saved_input_example_info:
+  artifact_path: input_example.json
+  pandas_orient: split
+  type: dataframe
+signature:
+  inputs: '[{"type": "double", "name": "ad_spend_cpm"}, {"type": "long", "name": "hour_of_day"},
+    {"type": "integer", "name": "is_peak_hour"}, {"type": "integer", "name": "is_mobile"},
+    {"type": "integer", "name": "is_shopping_site"}]'
+  outputs: '[{"type": "long"}]'
+  params: null
+utc_time_created: '2026-04-06 13:18:55.044837'
