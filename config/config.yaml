@@ -1,21 +1,45 @@
-project:
-  name: "MiQ_AdTech_CTR"
-  version: "7.5.0"
+name: Continuous Integration
 
-data:
-  raw_path: "data/raw/raw_impressions.parquet"
-  processed_path: "data/processed/features.parquet"
+on:
+  push:
+    branches: [ "main" ]
 
-model:
-  target: "is_clicked"
-  test_size: 0.2
-  random_state: 42
-  params:
-    max_depth: 6
-    learning_rate: 0.1
-    n_estimators: 100
-    objective: "binary:logistic"
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v3
 
-mlflow:
-  experiment_name: "MiQ_Ad_CTR_Prediction"
-  tracking_uri: "sqlite:///mlflow.db"
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.12"
+
+    - name: Install Java 11
+      uses: actions/setup-java@v3
+      with:
+        distribution: 'temurin'
+        java-version: '11'
+
+    - name: Install Build Tools (Fixes ModuleNotFoundError)
+      run: |
+        python -m pip install --upgrade pip
+        pip install "setuptools<70.0.0" wheel
+
+    - name: Install Dependencies
+      run: |
+        pip install -r requirements.txt
+        pip install -e . 
+
+    - name: Build Production Artifacts
+      run: |
+        export PYTHONPATH=$PYTHONPATH:$(pwd)
+        python -m src.data.generate_data
+        python -m src.features.build_features
+        python -m src.models.train
+
+    - name: Run Unit Tests
+      run: |
+        export PYTHONPATH=$PYTHONPATH:$(pwd)
+        python -m pytest tests/ -v -W ignore::DeprecationWarning
