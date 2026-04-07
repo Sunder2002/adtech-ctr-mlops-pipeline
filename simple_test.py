@@ -3,34 +3,30 @@ import json
 
 BASE_URL = "http://127.0.0.1:8000"
 
-def test_user(name, payload):
-    print(f"\n--- Testing User: {name} ---")
-    response = requests.post(f"{BASE_URL}/bid", json=payload)
-    print(json.dumps(response.json(), indent=4))
+def run_final_validation():
+    print("--- Phase 1: System Health Check ---")
+    try:
+        health = requests.get(f"{BASE_URL}/health").json()
+        print(f"Status: {health['status']} | Model Loaded: {health['model_loaded']}")
+    except:
+        print("Error: API is not running. Run 'make api' first.")
+        return
 
-# USER 1: High Intention (Shopping + Electronics interest + High History)
-high_value_user = {
-    "auction_id": "auc-high-001",
-    "user_id": 888222,
-    "user_interests": "Electronics,Sports,Gaming",
-    "historical_ctr": 0.08,
-    "site_category": "shopping",
-    "floor_price": 2.50
-}
-
-# USER 2: Low Intention (News site + No relevant interests + Low History)
-low_value_user = {
-    "auction_id": "auc-low-002",
-    "user_id": 111333,
-    "user_interests": "Cooking,Gardening",
-    "historical_ctr": 0.002,
-    "site_category": "news",
-    "floor_price": 1.00
-}
+    print("\n--- Phase 2: Behavioral Bid Request (Electronics Intent) ---")
+    # This matches the v7.1 BidRequest schema
+    payload = {
+        "email": "hruthik@miq.com",
+        "query": "I am looking for a high-performance laptop"
+    }
+    
+    res = requests.post(f"{BASE_URL}/bid", json=payload).json()
+    print(json.dumps(res, indent=4))
+    
+    if res['bid']:
+        print(f"✅ SUCCESS: Model predicted a click with {res['proba']*100:.1f}% confidence.")
+        print(f"ACTION: Bidding ${res['price']} to win this auction.")
+    else:
+        print("❌ PASS: Low intent detected.")
 
 if __name__ == "__main__":
-    try:
-        test_user("Electronics Buyer", high_value_user)
-        test_user("Casual News Reader", low_value_user)
-    except Exception as e:
-        print(f"Error: API might not be running. {e}")
+    run_final_validation()
