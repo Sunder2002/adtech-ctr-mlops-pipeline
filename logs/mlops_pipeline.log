@@ -154,3 +154,16 @@
 2026-04-07 12:12:27,030 - src.api.main - INFO - Shutting down Predictive Engine.
 2026-04-07 12:12:49,150 - src.api.main - INFO - Predictive Engine Online. Loaded Run: 4fa4918b3ec74777967698da8c6d363c
 2026-04-07 12:17:34,253 - src.api.main - INFO - Shutting down Predictive Engine.
+2026-04-07 12:18:50,727 - __main__ - INFO - Generating 100000 rows of High-Discrimination Ad-Tech data...
+2026-04-07 12:18:50,981 - __main__ - INFO - Data Generated. General CTR: 0.44%
+2026-04-07 12:18:50,993 - __main__ - INFO - Electronics CTR: 7.33%
+2026-04-07 12:18:58,004 - __main__ - INFO - Reading messy raw data...
+2026-04-07 12:30:10,434 - __main__ - INFO - Generating 50000 rows of High-Discrimination Ad-Tech data...
+2026-04-07 12:30:10,706 - __main__ - INFO - Data Generation Complete.
+2026-04-07 12:30:11,759 - __main__ - INFO - Initializing Enterprise-Scale PySpark Session...
+2026-04-07 12:30:31,046 - __main__ - INFO - ETL Successful. Processed 50000 records.
+2026-04-07 12:30:40,830 - __main__ - INFO - Initializing Ray Distributed Training Pipeline...
+2026-04-07 12:31:16,177 - __main__ - INFO - ✅ Training Success. ROC-AUC: 0.7887
+2026-04-07 12:31:32,517 - src.api.main - INFO - Predictive Engine Online.
+2026-04-07 12:31:32,543 - src.api.main - INFO - Predictive Engine Online.
+2026-04-07 12:31:32,564 - src.api.main - INFO - Predictive Engine Online.

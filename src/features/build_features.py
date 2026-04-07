@@ -1,52 +1,66 @@
 import yaml
+import sys
+import os
+import traceback
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
-from pyspark.sql.types import TimestampType, IntegerType, DoubleType
+from pyspark.sql.types import TimestampType, DoubleType, IntegerType
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
 def run_pyspark_etl(raw_path: str, processed_path: str) -> None:
-    spark = SparkSession.builder.appName("MiQ_Complex_ETL").master("local[*]").getOrCreate()
-    
+    logger.info("Initializing Enterprise-Scale PySpark Session...")
     try:
-        logger.info("Reading messy raw data...")
+        spark = SparkSession.builder \
+            .appName("MiQ_AdTech_ETL") \
+            .master("local[*]") \
+            .config("spark.driver.memory", "2g") \
+            .getOrCreate()
+
+        if not os.path.exists(raw_path):
+            logger.error(f"Raw data missing at: {raw_path}")
+            sys.exit(1)
+
         df = spark.read.parquet(raw_path)
 
-        # 1. Handling Messiness: Clean strings and Impute missing values
-        # Convert device to lowercase and fill missing CPM with the median
-        median_cpm = df.approxQuantile("ad_spend_cpm", [0.5], 0.01)[0]
-        df = df.withColumn("device_type", F.lower(F.col("device_type"))) \
-               .fillna({"ad_spend_cpm": median_cpm})
+        # 1. Clean Messy Data
+        median_cpm = df.approxQuantile("ad_spend_cpm",[0.5], 0.01)[0]
+        df = df.fillna({"ad_spend_cpm": median_cpm})
+        df = df.withColumn("device_type", F.lower(F.col("device_type")))
 
-        # 2. Feature Engineering: Intent Detection (Searching inside CSV-like strings)
-        # We detect if 'Electronics' or 'Automotive' exists in their history
-        df = df.withColumn("intent_electronics", F.when(F.col("user_interests").contains("Electronics"), 1).otherwise(0))
-        df = df.withColumn("intent_automotive", F.when(F.col("user_interests").contains("Automotive"), 1).otherwise(0))
-
-        # 3. Contextual Features
-        df = df.withColumn("is_peak_hour", F.when((F.col("hour_of_day") >= 17) & (F.col("hour_of_day") <= 21), 1).otherwise(0))
-        df = df.withColumn("is_shopping_site", F.when(F.col("site_category") == "shopping", 1).otherwise(0))
-        
-        # 4. Final Metadata
+        # 2. Feature Derivation
         df = df.withColumn("event_timestamp", F.current_timestamp().cast(TimestampType()))
+        df = df.withColumn("is_peak_hour", F.when((F.col("hour_of_day") >= 17) & (F.col("hour_of_day") <= 21), 1).otherwise(0))
+        df = df.withColumn("is_mobile", F.when(F.col("device_type") == "mobile", 1).otherwise(0))
+        df = df.withColumn("is_shopping_site", F.when(F.col("site_category") == "shopping", 1).otherwise(0))
+        df = df.withColumn("intent_electronics", F.when(F.col("segment") == "electronics", 1).otherwise(0))
+        df = df.withColumn("intent_automotive", F.when(F.col("segment") == "automotive", 1).otherwise(0))
 
-        # Select Features for the Model
-        final_cols = [
-            "user_id", "event_timestamp", "ad_spend_cpm", "historical_user_ctr",
-            "is_peak_hour", "intent_electronics", "intent_automotive", 
-            "is_shopping_site", "is_clicked"
-        ]
-        
-        # Enforce strict types to prevent XGBoost crashes
-        df_final = df.select([F.col(c).cast(DoubleType()) if c in ["ad_spend_cpm", "historical_user_ctr"] 
-                             else F.col(c).cast(IntegerType()) if c not in ["event_timestamp"]
-                             else F.col(c) for c in final_cols])
+        # 3. Strict Schema Selection (Must match API exactly)
+        final_df = df.select(
+            F.col("user_id").cast(IntegerType()),
+            "event_timestamp",
+            F.col("ad_spend_cpm").cast(DoubleType()),
+            F.col("historical_user_ctr").cast(DoubleType()),
+            F.col("is_peak_hour").cast(IntegerType()),
+            F.col("is_mobile").cast(IntegerType()),
+            F.col("intent_electronics").cast(IntegerType()),
+            F.col("intent_automotive").cast(IntegerType()),
+            F.col("is_shopping_site").cast(IntegerType()),
+            F.col("is_clicked").cast(IntegerType())
+        )
 
-        df_final.write.mode("overwrite").parquet(processed_path)
-        logger.info("Complex ETL successful.")
+        final_df.write.mode("overwrite").parquet(processed_path)
+        logger.info(f"ETL Successful. Processed {final_df.count()} records.")
+
+    except Exception as e:
+        logger.error(f"ETL Pipeline Failed: {e}")
+        logger.error(traceback.format_exc())
+        sys.exit(1)
     finally:
-        spark.stop()
+        if 'spark' in locals():
+            spark.stop()
 
 if __name__ == "__main__":
     with open("config/config.yaml", "r") as f:
