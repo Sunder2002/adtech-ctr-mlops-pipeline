@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>MiQ TechStream</title>
+    <style>
+        body { font-family: sans-serif; display: flex; height: 100vh; margin: 0; background: #f4f4f4; }
+        .site { flex: 2; padding: 40px; background: white; }
+        .sidebar { flex: 1; background: #1e1e1e; color: #00ff00; padding: 20px; font-family: monospace; overflow-y: auto; }
+        .ad-slot { border: 2px dashed #007bff; min-height: 200px; margin: 20px 0; display: flex; align-items: center; justify-content: center; }
+        input { padding: 10px; width: 300px; border: 1px solid #ddd; }
+        button { padding: 10px 20px; background: #007bff; color: white; border: none; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <div class="site">
+        <h1>TechStream News Portal</h1>
+        <p>The ML model learns your intent. Try 'laptop' vs 'icecream'.</p>
+        <input id="q" placeholder="Search for 'phone', 'car'...">
+        <button onclick="search()">Search</button>
+        <div id="ad" class="ad-slot">Waiting for auction...</div>
+        <p><a href="/dashboard" target="_blank">Open Performance Dashboard</a></p>
+    </div>
+    <div class="sidebar" id="logs"><h3>Live Bidding Stream</h3></div>
+    <script>
+        async function search() {
+            const q = document.getElementById('q').value;
+            const res = await fetch('/bid', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({email: 'hruthik@miq.com', query: q})
+            });
+            const data = await res.json();
+            document.getElementById('ad').innerHTML = data.bid ? data.adm : "<span style='color:red'>PASS: Low ML Confidence</span>";
+            const log = document.createElement('div');
+            log.innerText = `[${new Date().toLocaleTimeString()}] Auction: ${data.bid ? 'WON' : 'PASS'} (${data.latency}ms)`;
+            document.getElementById('logs').prepend(log);
+        }
+    </script>
+</body>
+</html>

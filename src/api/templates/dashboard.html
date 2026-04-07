@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>MiQ Dashboard</title>
+    <meta http-equiv="refresh" content="3">
+    <style>
+        body { font-family: sans-serif; background: #121212; color: white; padding: 40px; }
+        .card-container { display: flex; gap: 20px; margin-bottom: 30px; }
+        .card { background: #1e1e1e; padding: 20px; border-radius: 10px; flex: 1; border-bottom: 4px solid #007bff; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #333; }
+    </style>
+</head>
+<body>
+    <h1>📊 MiQ Live Bidding Monitor</h1>
+    <div class="card-container">
+        <div class="card"><h3>Auctions</h3><p>{{ total }}</p></div>
+        <div class="card"><h3>Win Rate</h3><p>{{ win_rate }}%</p></div>
+        <div class="card"><h3>Memory</h3><p>{{ mem }} MB</p></div>
+    </div>
+    <table>
+        <thead><tr><th>Time</th><th>User</th><th>Category</th><th>Result</th><th>Confidence</th></tr></thead>
+        <tbody>
+            {% for h in history %}
+            <tr><td>{{ h.t }}</td><td>{{ h.u }}</td><td>{{ h.c }}</td><td>{{ h.r }}</td><td>{{ h.p }}</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</body>
+</html>

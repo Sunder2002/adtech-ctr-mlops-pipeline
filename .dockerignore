@@ -1,7 +1,11 @@
 __pycache__/
+*.py[cod]
+*$py.class
 .pytest_cache/
+mlruns/
+mlflow.db
 logs/
 data/raw/
 data/processed/
-mlflow.db
-mlruns/
+.venv/
+env/
