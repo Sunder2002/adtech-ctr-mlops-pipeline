@@ -16,7 +16,7 @@ jobs:
       with:
         python-version: "3.12"
 
-    - name: Install Java 11
+    - name: Install Java 11 (Required for PySpark)
       uses: actions/setup-java@v3
       with:
         distribution: 'temurin'
@@ -25,15 +25,19 @@ jobs:
     - name: Install Build Tools
       run: |
         python -m pip install --upgrade pip
-        pip install setuptools wheel
+        pip install "setuptools<70.0.0" wheel
 
     - name: Install Dependencies
       run: |
         pip install -r requirements.txt
         pip install -e . 
 
-    - name: Build Production Artifacts
+    - name: Build Production Artifacts (Hermetic Build)
       run: |
+        # SENIOR FIX: Delete the Codespace-specific database so MLflow 
+        # generates a fresh one with the correct paths for the GitHub Runner.
+        rm -rf mlflow.db mlruns/
+        
         export PYTHONPATH=$PYTHONPATH:$(pwd)
         python -m src.data.generate_data
         python -m src.features.build_features
