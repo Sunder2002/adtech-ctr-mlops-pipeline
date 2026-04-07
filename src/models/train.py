@@ -15,6 +15,33 @@ from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
+# Fallback configuration to prevent KeyErrors if YAML is corrupted
+DEFAULT_CONFIG = {
+    "data": {"processed_path": "data/processed/features.parquet"},
+    "model": {
+        "target": "is_clicked",
+        "test_size": 0.2,
+        "random_state": 42,
+        "params": {
+            "max_depth": 6, "learning_rate": 0.1, "n_estimators": 100, "objective": "binary:logistic"
+        }
+    },
+    "mlflow": {
+        "experiment_name": "MiQ_Ad_CTR_Prediction",
+        "tracking_uri": "sqlite:///mlflow.db"
+    }
+}
+
+def get_safe_config():
+    try:
+        with open("config/config.yaml", "r") as f:
+            config = yaml.safe_load(f)
+            if config and "data" in config and "model" in config:
+                return config
+    except Exception as e:
+        logger.warning(f"Config load failed, using defaults. Error: {e}")
+    return DEFAULT_CONFIG
+
 @ray.remote
 def distributed_train_worker(config, X_train, y_train, X_test, y_test):
     try:
@@ -45,8 +72,7 @@ def run_production_training():
     ray.init(include_dashboard=False, ignore_reinit_error=True, num_cpus=2)
     
     try:
-        with open("config/config.yaml", "r") as f:
-            config = yaml.safe_load(f)
+        config = get_safe_config()
 
         processed_path = config["data"]["processed_path"]
         if not os.path.exists(processed_path):
@@ -55,8 +81,7 @@ def run_production_training():
             
         df = pd.read_parquet(processed_path).dropna(subset=[config["model"]["target"]])
         
-        # STRICT FEATURE SELECTION (Excluding metadata)
-        metadata = ["user_id", "event_timestamp"]
+        metadata =["user_id", "event_timestamp"]
         target = config["model"]["target"]
         
         X = df.drop(columns=[target] + metadata)
@@ -73,7 +98,7 @@ def run_production_training():
             logger.error(f"Worker Failed: {results['error']}")
             sys.exit(1)
             
-        logger.info(f"✅ Training Success. ROC-AUC: {results['roc_auc']:.4f}")
+        logger.info(f"Training Success. ROC-AUC: {results['roc_auc']:.4f}")
 
     except Exception as e:
         logger.error(f"Pipeline Crash: {e}")
