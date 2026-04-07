@@ -3,8 +3,6 @@ name: Continuous Integration
 on:
   push:
     branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
 
 jobs:
   build-and-test:
@@ -18,27 +16,23 @@ jobs:
       with:
         python-version: "3.12"
 
-    - name: Install Java 11 (Required for PySpark)
+    - name: Install Java 11
       uses: actions/setup-java@v3
       with:
         distribution: 'temurin'
         java-version: '11'
 
-    - name: Install Dependencies
+    - name: Install Build Tools & Dependencies
       run: |
         python -m pip install --upgrade pip
+        pip install setuptools wheel
         pip install -r requirements.txt
         pip install -e . 
 
-    - name: Build Production Artifacts
+    - name: Build and Test
       run: |
-        # In CI, we must generate the model from scratch to ensure path consistency
         export PYTHONPATH=$PYTHONPATH:$(pwd)
         python -m src.data.generate_data
         python -m src.features.build_features
         python -m src.models.train
-
-    - name: Run Unit Tests
-      run: |
-        export PYTHONPATH=$PYTHONPATH:$(pwd)
         python -m pytest tests/ -v -W ignore::DeprecationWarning

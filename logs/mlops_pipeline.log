@@ -140,3 +140,17 @@
 2026-04-07 11:59:13,885 - src.api.main - INFO - Shutting down Predictive Engine.
 2026-04-07 11:59:13,908 - src.api.main - INFO - Predictive Engine Online. Loaded Run: 91954fd3d8e2424db4a1b19bc6beb9ab
 2026-04-07 11:59:13,912 - src.api.main - INFO - Shutting down Predictive Engine.
+2026-04-07 12:10:57,940 - __main__ - INFO - Generating 50000 rows of complex, messy Ad-Tech data...
+2026-04-07 12:10:59,796 - __main__ - INFO - Complex data persisted. Overall CTR: 5.58%
+2026-04-07 12:11:18,138 - __main__ - INFO - Reading messy raw data...
+2026-04-07 12:11:29,141 - __main__ - INFO - Complex ETL successful.
+2026-04-07 12:11:37,576 - __main__ - INFO - 🚀 Initializing MiQ Distributed Training Pipeline...
+2026-04-07 12:12:05,853 - __main__ - INFO - ✅ Training Success. ROC-AUC: 0.5972
+2026-04-07 12:12:26,977 - src.api.main - INFO - Predictive Engine Online. Loaded Run: 4fa4918b3ec74777967698da8c6d363c
+2026-04-07 12:12:26,981 - src.api.main - INFO - Shutting down Predictive Engine.
+2026-04-07 12:12:27,003 - src.api.main - INFO - Predictive Engine Online. Loaded Run: 4fa4918b3ec74777967698da8c6d363c
+2026-04-07 12:12:27,005 - src.api.main - INFO - Shutting down Predictive Engine.
+2026-04-07 12:12:27,025 - src.api.main - INFO - Predictive Engine Online. Loaded Run: 4fa4918b3ec74777967698da8c6d363c
+2026-04-07 12:12:27,030 - src.api.main - INFO - Shutting down Predictive Engine.
+2026-04-07 12:12:49,150 - src.api.main - INFO - Predictive Engine Online. Loaded Run: 4fa4918b3ec74777967698da8c6d363c
+2026-04-07 12:17:34,253 - src.api.main - INFO - Shutting down Predictive Engine.
