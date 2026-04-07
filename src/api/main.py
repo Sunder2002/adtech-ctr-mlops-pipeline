@@ -1,6 +1,7 @@
 import time
 import psutil
 import hashlib
+import random
 import numpy as np
 import pandas as pd
 import mlflow.sklearn
@@ -14,26 +15,37 @@ from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-# --- LIFESPAN MANAGER (Modern FastAPI Standard) ---
+# --- LIFESPAN MANAGER ---
 model = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Handles startup and shutdown events logic."""
+    """Handles startup and shutdown with robust error handling."""
     global model
     try:
         mlflow.set_tracking_uri("sqlite:///mlflow.db")
         client = mlflow.tracking.MlflowClient()
+        # Search for the experiment
         exp = client.get_experiment_by_name("MiQ_Ad_CTR_Prediction")
         if exp:
-            runs = client.search_runs(exp.experiment_id, order_by=["start_time DESC"])
+            runs = client.search_runs(
+                experiment_ids=[exp.experiment_id],
+                filter_string="attributes.status = 'FINISHED'",
+                order_by=["attributes.start_time DESC"],
+                max_results=1
+            )
             if runs:
-                model = mlflow.sklearn.load_model(f"runs:/{runs[0].info.run_id}/xgboost-ctr-model")
-                logger.info("Predictive Engine Online via Lifespan.")
+                model_uri = f"runs:/{runs[0].info.run_id}/xgboost-ctr-model"
+                model = mlflow.sklearn.load_model(model_uri)
+                logger.info(f"Predictive Engine Online. Loaded Run: {runs[0].info.run_id}")
+            else:
+                logger.warning("No finished runs found in MLflow.")
+        else:
+            logger.warning("Experiment 'MiQ_Ad_CTR_Prediction' not found in registry.")
     except Exception as e:
-        logger.error(f"Registry Sync Error: {e}")
+        logger.error(f"Startup Registry Sync Failed: {e}")
+    
     yield
-    # Shutdown logic (if any) goes here
     logger.info("Shutting down Predictive Engine.")
 
 app = FastAPI(title="MiQ Enterprise Bidding Platform", lifespan=lifespan)
@@ -73,31 +85,37 @@ class BidRequest(BaseModel):
 @app.post("/bid")
 async def bid(req: BidRequest):
     start = time.perf_counter()
-    if not model: raise HTTPException(status_code=503, detail="Model not loaded")
+    if not model: 
+        raise HTTPException(status_code=503, detail="Model not loaded in registry")
     
-    uid = hashlib.sha256(req.email.encode()).hexdigest()
-    feature_store.update_intent(uid, req.query)
-    profile = feature_store.get_profile(uid)
-    category = max(profile, key=profile.get)
-    
-    features = {
-        "ad_spend_cpm": np.float64(2.50),
-        "historical_user_ctr": np.float64(profile[category]),
-        "is_peak_hour": np.int32(1 if 17 <= datetime.now().hour <= 21 else 0),
-        "intent_electronics": np.int32(1 if category == "electronics" else 0),
-        "intent_automotive": np.int32(1 if category == "automotive" else 0),
-        "is_shopping_site": np.int32(1)
-    }
-    
-    df = pd.DataFrame([features])
-    cols = ["ad_spend_cpm", "historical_user_ctr", "is_peak_hour", "intent_electronics", "intent_automotive", "is_shopping_site"]
-    proba = float(model.predict_proba(df[cols])[0][1])
-    do_bid = proba > 0.04
-    
-    feature_store.log(uid, category, do_bid, proba)
-    
-    adm = f"<div style='background:#fff3cd; padding:10px;'><h3>🎯 {category.upper()} Deal</h3><p>Personalized for you.</p></div>"
-    return {"bid": do_bid, "adm": adm, "proba": proba, "category": category, "latency": round((time.perf_counter()-start)*1000, 2)}
+    try:
+        uid = hashlib.sha256(req.email.encode()).hexdigest()
+        feature_store.update_intent(uid, req.query)
+        profile = feature_store.get_profile(uid)
+        category = max(profile, key=profile.get)
+        
+        features = {
+            "ad_spend_cpm": np.float64(2.50),
+            "historical_user_ctr": np.float64(profile[category]),
+            "is_peak_hour": np.int32(1 if 17 <= datetime.now().hour <= 21 else 0),
+            "intent_electronics": np.int32(1 if category == "electronics" else 0),
+            "intent_automotive": np.int32(1 if category == "automotive" else 0),
+            "is_shopping_site": np.int32(1)
+        }
+        
+        df = pd.DataFrame([features])
+        cols = ["ad_spend_cpm", "historical_user_ctr", "is_peak_hour", "intent_electronics", "intent_automotive", "is_shopping_site"]
+        
+        proba = float(model.predict_proba(df[cols])[0][1])
+        do_bid = proba > 0.04
+        
+        feature_store.log(uid, category, do_bid, proba)
+        
+        adm = f"<div style='background:#fff3cd; padding:10px;'><h3>🎯 {category.upper()} Deal</h3><p>Personalized for you.</p></div>"
+        return {"bid": do_bid, "adm": adm, "proba": proba, "category": category, "latency": round((time.perf_counter()-start)*1000, 2)}
+    except Exception as e:
+        logger.error(f"Inference Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):

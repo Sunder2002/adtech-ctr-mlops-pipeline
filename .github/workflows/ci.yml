@@ -7,7 +7,7 @@ on:
     branches: [ "main" ]
 
 jobs:
-  test:
+  build-and-test:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout Code
@@ -30,8 +30,15 @@ jobs:
         pip install -r requirements.txt
         pip install -e . 
 
+    - name: Build Production Artifacts
+      run: |
+        # In CI, we must generate the model from scratch to ensure path consistency
+        export PYTHONPATH=$PYTHONPATH:$(pwd)
+        python -m src.data.generate_data
+        python -m src.features.build_features
+        python -m src.models.train
+
     - name: Run Unit Tests
       run: |
-        # Set PYTHONPATH to current directory so 'src' is found
         export PYTHONPATH=$PYTHONPATH:$(pwd)
-        python -m pytest tests/ -v
+        python -m pytest tests/ -v -W ignore::DeprecationWarning
