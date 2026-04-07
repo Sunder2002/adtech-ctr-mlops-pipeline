@@ -1,0 +1,3 @@
+*.html linguist-detectable=false
+*.db linguist-detectable=false
+data/** linguist-detectable=false

@@ -1,20 +1,22 @@
+import pytest
 from fastapi.testclient import TestClient
 from src.api.main import app
 
-client = TestClient(app)
-
+# Senior Fix: Use the client as a context manager to trigger 'lifespan' events
 def test_health_check():
-    """Ensure the API boots up and the health endpoint responds."""
-    response = client.get("/health")
-    assert response.status_code == 200
-    assert response.json()["status"] == "healthy"
+    with TestClient(app) as client:
+        response = client.get("/health")
+        assert response.status_code == 200
+        assert response.json()["status"] == "ready"
 
-def test_predict_validation_error():
-    """Ensure Pydantic catches bad data (e.g., missing fields)."""
-    bad_payload = {
-        "ad_spend_cpm": 5.5
-        # Missing other required fields
-    }
-    response = client.post("/predict", json=bad_payload)
-    # 422 Unprocessable Entity is the correct FastAPI response for bad data
-    assert response.status_code == 422
+def test_bid_validation_error():
+    with TestClient(app) as client:
+        bad_payload = {"email": "test@miq.com"}
+        response = client.post("/bid", json=bad_payload)
+        assert response.status_code == 422 
+
+def test_root_landing_page():
+    with TestClient(app) as client:
+        response = client.get("/")
+        assert response.status_code == 200
+        assert "TechStream" in response.text

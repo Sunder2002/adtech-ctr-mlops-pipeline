@@ -1,10 +1,10 @@
 import time
 import psutil
 import hashlib
-import random
 import numpy as np
 import pandas as pd
 import mlflow.sklearn
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
@@ -13,11 +13,33 @@ from datetime import datetime
 from src.utils.logger import get_logger
 
 logger = get_logger(__name__)
-app = FastAPI(title="MiQ Enterprise Bidding Platform")
 
-# Setup Templates
+# --- LIFESPAN MANAGER (Modern FastAPI Standard) ---
+model = None
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Handles startup and shutdown events logic."""
+    global model
+    try:
+        mlflow.set_tracking_uri("sqlite:///mlflow.db")
+        client = mlflow.tracking.MlflowClient()
+        exp = client.get_experiment_by_name("MiQ_Ad_CTR_Prediction")
+        if exp:
+            runs = client.search_runs(exp.experiment_id, order_by=["start_time DESC"])
+            if runs:
+                model = mlflow.sklearn.load_model(f"runs:/{runs[0].info.run_id}/xgboost-ctr-model")
+                logger.info("Predictive Engine Online via Lifespan.")
+    except Exception as e:
+        logger.error(f"Registry Sync Error: {e}")
+    yield
+    # Shutdown logic (if any) goes here
+    logger.info("Shutting down Predictive Engine.")
+
+app = FastAPI(title="MiQ Enterprise Bidding Platform", lifespan=lifespan)
 templates = Jinja2Templates(directory="src/api/templates")
 
+# --- FEATURE STORE SERVICE ---
 class FeatureStore:
     def __init__(self):
         self._profiles = {} 
@@ -43,21 +65,6 @@ class FeatureStore:
         self.history = self.history[:15]
 
 feature_store = FeatureStore()
-model = None
-
-@app.on_event("startup")
-def load_model():
-    global model
-    try:
-        mlflow.set_tracking_uri("sqlite:///mlflow.db")
-        client = mlflow.tracking.MlflowClient()
-        exp = client.get_experiment_by_name("MiQ_Ad_CTR_Prediction")
-        if exp:
-            runs = client.search_runs(exp.experiment_id, order_by=["start_time DESC"])
-            if runs:
-                model = mlflow.sklearn.load_model(f"runs:/{runs[0].info.run_id}/xgboost-ctr-model")
-                logger.info("Predictive Engine Online.")
-    except Exception as e: logger.error(f"Registry Error: {e}")
 
 class BidRequest(BaseModel):
     email: str
@@ -66,7 +73,8 @@ class BidRequest(BaseModel):
 @app.post("/bid")
 async def bid(req: BidRequest):
     start = time.perf_counter()
-    if not model: raise HTTPException(status_code=503)
+    if not model: raise HTTPException(status_code=503, detail="Model not loaded")
+    
     uid = hashlib.sha256(req.email.encode()).hexdigest()
     feature_store.update_intent(uid, req.query)
     profile = feature_store.get_profile(uid)
@@ -93,16 +101,18 @@ async def bid(req: BidRequest):
 
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+    return templates.TemplateResponse(request, "index.html")
 
 @app.get("/dashboard", response_class=HTMLResponse)
 async def dashboard(request: Request):
     mem = psutil.Process().memory_info().rss / (1024 * 1024)
     total = max(1, feature_store.metrics["total"])
     win_rate = round((feature_store.metrics["bids"] / total) * 100, 1)
-    return templates.TemplateResponse("dashboard.html", {
-        "request": request, "total": feature_store.metrics["total"], 
-        "win_rate": win_rate, "mem": round(mem, 2), "history": feature_store.history
+    return templates.TemplateResponse(request, "dashboard.html", {
+        "total": feature_store.metrics["total"], 
+        "win_rate": win_rate, 
+        "mem": round(mem, 2), 
+        "history": feature_store.history
     })
 
 @app.get("/health")

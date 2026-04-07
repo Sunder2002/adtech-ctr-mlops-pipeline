@@ -16,7 +16,7 @@ api:
 	uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
 
 test:
-	PYTHONPATH=. pytest tests/ -v
+	python -m pytest tests/ -v -W ignore::DeprecationWarning
 
 run_all: data features train
 	@echo "Pipeline executed successfully! Run 'make api' to start the server."

@@ -18,14 +18,20 @@ jobs:
       with:
         python-version: "3.12"
 
+    - name: Install Java 11 (Required for PySpark)
+      uses: actions/setup-java@v3
+      with:
+        distribution: 'temurin'
+        java-version: '11'
+
     - name: Install Dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-        # Senior Fix: Install the local directory as a package
         pip install -e . 
 
     - name: Run Unit Tests
       run: |
+        # Set PYTHONPATH to current directory so 'src' is found
         export PYTHONPATH=$PYTHONPATH:$(pwd)
-        pytest tests/ -v
+        python -m pytest tests/ -v
